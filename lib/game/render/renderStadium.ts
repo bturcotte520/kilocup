@@ -191,7 +191,8 @@ function drawStandsAroundPitch(args: {
     const isTop = orient === "H" ? y < pitchRect.y : false;
     const isLeft = orient === "V" ? x < pitchRect.x : false;
 
-    const t = nowMs / 1000;
+    // NOTE: Keep tier geometry visually stable. Any motion should come from the crowd itself,
+    // not tier-relative translations (which read like the “levels” are sliding).
 
     const tierCount = 3;
     const tierGap = clamp(Math.min(w, h) * 0.06, 6, 14);
@@ -234,30 +235,13 @@ function drawStandsAroundPitch(args: {
       ctx.fillStyle = i === 0 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.18)";
       ctx.fillRect(trr.x, trr.y, trr.w, trr.h);
 
-      // "Step" shadow at the inner edge of each tier (reads like level breaks)
-      ctx.globalAlpha = 0.38;
-      ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.lineWidth = 6;
-
-      if (orient === "H") {
-        const yEdge = isTop ? trr.y + trr.h : trr.y;
-        ctx.beginPath();
-        ctx.moveTo(trr.x + 6, yEdge);
-        ctx.lineTo(trr.x + trr.w - 6, yEdge);
-        ctx.stroke();
-      } else {
-        const xEdge = isLeft ? trr.x + trr.w : trr.x;
-        ctx.beginPath();
-        ctx.moveTo(xEdge, trr.y + 6);
-        ctx.lineTo(xEdge, trr.y + trr.h - 6);
-        ctx.stroke();
-      }
+      // Divider visuals are handled as explicit "balcony" rails in the tier gaps below.
 
       ctx.restore();
     }
 
-    // Crowd per tier with depth parallax: far tier drifts less, near tier drifts more.
-    const tierParallax = [0.45, 0.7, 1.0];
+    // Crowd per tier. Keep the translation the same per tier so tier breaks look stable/clean.
+    // Depth is communicated via tier shading + slightly different crowd palette per tier.
     const tierColors: [string, string][] = [
       ["#BFC9D6", "#7F8E9E"], // near (brighter)
       ["#A7B2C2", "#6C7A8A"], // mid
@@ -266,18 +250,14 @@ function drawStandsAroundPitch(args: {
 
     for (let i = 0; i < tiers.length; i++) {
       const trr = tiers[i];
-      const p = tierParallax[i] ?? 0.7;
 
       ctx.save();
       ctx.beginPath();
       ctx.rect(trr.x, trr.y, trr.w, trr.h);
       ctx.clip();
 
-      // A touch of independent "stadium life" so it doesn't look static.
-      const swayX = Math.sin(t * 0.25 + seed * 0.01 + i) * 1.2;
-      const swayY = Math.cos(t * 0.22 + seed * 0.013 + i) * 1.0;
-
-      ctx.translate(driftX * p + swayX, driftY * p + swayY);
+      // Same drift for all tiers: prevents the “levels are sliding” look.
+      ctx.translate(driftX, driftY);
 
       drawCrowd(ctx, {
         x: trr.x - 90,
@@ -293,6 +273,100 @@ function drawStandsAroundPitch(args: {
         seed: seed + i * 97,
         pulse: crowdPulse,
       });
+
+      ctx.restore();
+    }
+
+    // Balcony rails between tiers (medium-light grey) with cutout openings.
+    // These live in the tierGap bands, which reads as "3D levels" from overhead.
+    for (let i = 0; i < tiers.length - 1; i++) {
+      const a = tiers[i];
+      const b = tiers[i + 1];
+
+      // gap strip location depends on whether tiers stack "toward" or "away" from pitch
+      const gx =
+        orient === "V"
+          ? (isLeft ? b.x + b.w : a.x + a.w)
+          : a.x;
+      const gy =
+        orient === "H"
+          ? (isTop ? b.y + b.h : a.y + a.h)
+          : a.y;
+
+      const gw = orient === "V" ? tierGap : a.w;
+      const gh = orient === "H" ? tierGap : a.h;
+
+      if (gw <= 2 || gh <= 2) continue;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(gx, gy, gw, gh);
+      ctx.clip();
+
+      // Solid balcony band (the "divider")
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = "#9FA9B7"; // medium-light grey
+      ctx.fillRect(gx, gy, gw, gh);
+
+      // Top highlight + bottom shadow to make it read like a ledge
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.lineWidth = 2;
+      if (orient === "H") {
+        const yTop = Math.round(gy) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(gx + 4, yTop);
+        ctx.lineTo(gx + gw - 4, yTop);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.65;
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        const yBot = Math.round(gy + gh) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(gx + 4, yBot);
+        ctx.lineTo(gx + gw - 4, yBot);
+        ctx.stroke();
+      } else {
+        const xTop = Math.round(gx) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(xTop, gy + 4);
+        ctx.lineTo(xTop, gy + gh - 4);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.65;
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        const xBot = Math.round(gx + gw) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(xBot, gy + 4);
+        ctx.lineTo(xBot, gy + gh - 4);
+        ctx.stroke();
+      }
+
+      // Cutout openings (balcony shapes)
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = "rgba(0,0,0,0.30)";
+
+      if (orient === "H") {
+        const step = clamp(gw * 0.09, 46, 84);
+        const holeW = step * 0.62;
+        const holeH = gh * 0.62;
+        const yy = gy + (gh - holeH) * 0.55;
+
+        for (let k = 0; k < Math.floor(gw / step); k++) {
+          const xx = gx + step * (k + 0.5) - holeW * 0.5;
+          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
+        }
+      } else {
+        const step = clamp(gh * 0.09, 46, 84);
+        const holeH = step * 0.62;
+        const holeW = gw * 0.62;
+        const xx = gx + (gw - holeW) * 0.55;
+
+        for (let k = 0; k < Math.floor(gh / step); k++) {
+          const yy = gy + step * (k + 0.5) - holeH * 0.5;
+          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
+        }
+      }
 
       ctx.restore();
     }
@@ -401,13 +475,56 @@ function drawStandsAroundPitch(args: {
     ctx.restore();
   };
 
-  // Top / bottom stands (full width)
-  drawStandRegion(0, 0, vp.w, topH, 2101, "H");
-  drawStandRegion(0, vp.h - bottomH, vp.w, bottomH, 2207, "H");
+  // Corner “caps” so the horizontal/vertical shells don’t intersect.
+  // These are structural blocks (no balcony rails), to avoid messy overlap artifacts.
+  const drawCornerCap = (x: number, y: number, w: number, h: number, seed: number) => {
+    if (w <= 2 || h <= 2) return;
 
-  // Side stands (full height)
-  drawStandRegion(0, 0, leftW, vp.h, 2303, "V");
-  drawStandRegion(vp.w - rightW, 0, rightW, vp.h, 2401, "V");
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    const base = ctx.createLinearGradient(x, y, x + w, y + h);
+    base.addColorStop(0, "rgba(0,0,0,0.62)");
+    base.addColorStop(1, "rgba(0,0,0,0.22)");
+    ctx.fillStyle = base;
+    ctx.fillRect(x, y, w, h);
+
+    // A few “support lights” so it reads intentional, not empty.
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    const n = 6;
+    for (let i = 0; i < n; i++) {
+      const rx = hash01(seed * 11.7 + i * 9.3);
+      const ry = hash01(seed * 21.1 + i * 7.9);
+      const ww = clamp(w * 0.18, 10, 22);
+      const hh = clamp(h * 0.08, 6, 14);
+      ctx.fillRect(x + rx * (w - ww), y + ry * (h - hh), ww, hh);
+    }
+
+    ctx.restore();
+  };
+
+  // “Shell” layout:
+  // - Top/bottom stands are inset horizontally so they don't overlap left/right stands
+  // - Left/right stands are inset vertically so they don't overlap top/bottom stands
+  const midW = Math.max(0, vp.w - leftW - rightW);
+  const midH = Math.max(0, vp.h - topH - bottomH);
+
+  // Top / bottom shells (no corner intersection)
+  drawStandRegion(leftW, 0, midW, topH, 2101, "H");
+  drawStandRegion(leftW, vp.h - bottomH, midW, bottomH, 2207, "H");
+
+  // Left / right shells (no corner intersection)
+  drawStandRegion(0, topH, leftW, midH, 2303, "V");
+  drawStandRegion(vp.w - rightW, topH, rightW, midH, 2401, "V");
+
+  // Corner caps (structural supports)
+  drawCornerCap(0, 0, leftW, topH, 2501);
+  drawCornerCap(vp.w - rightW, 0, rightW, topH, 2507);
+  drawCornerCap(0, vp.h - bottomH, leftW, bottomH, 2513);
+  drawCornerCap(vp.w - rightW, vp.h - bottomH, rightW, bottomH, 2519);
 
 }
 
