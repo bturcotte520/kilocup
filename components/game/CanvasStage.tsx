@@ -7,8 +7,11 @@ import type { MatchSetup } from "@/lib/game/engine/createMatch";
 import { createEngine } from "@/lib/game/engine/createEngine";
 import { createKeyboardInput } from "@/lib/game/input/keyboard";
 import { createGamepadInput } from "@/lib/game/input/gamepad";
+import { createTouchInput, TouchInput } from "@/lib/game/input/touch";
 import { renderFrame } from "@/lib/game/render/renderFrame";
+import { isTouchDevice } from "@/lib/utils/device";
 import { Hud } from "@/components/game/ui/Hud";
+import { MobileControls } from "./ui/touch/MobileControls";
 
 type Size = { w: number; h: number; dpr: number };
 
@@ -46,6 +49,7 @@ export function CanvasStage(props: {
   const engineRef = useRef<Engine | null>(null);
   const keyboardRef = useRef<ReturnType<typeof createKeyboardInput> | null>(null);
   const gamepadRef = useRef<ReturnType<typeof createGamepadInput> | null>(null);
+  const touchRef = useRef<TouchInput | null>(null);
 
   // Merged snapshot passed to engine as a stable mutable ref.
   const inputRef = useRef<InputSnapshot | null>(null);
@@ -125,6 +129,10 @@ export function CanvasStage(props: {
     const gamepad = createGamepadInput();
     gamepadRef.current = gamepad;
 
+    if (isTouchDevice()) {
+      touchRef.current = createTouchInput();
+    }
+
     // Create initial engine instance (tournament can immediately replace it via matchId effect).
     makeEngine();
 
@@ -192,24 +200,33 @@ export function CanvasStage(props: {
       // Merge inputs into the engine snapshot.
       const kb = keyboardRef.current?.state;
       const gp = gamepadRef.current?.state;
+      const touch = touchRef.current?.state;
       const merged = inputRef.current;
 
       if (merged && kb && gp) {
+        // Movement priority: Touch > Gamepad > Keyboard
+        const touchMoveActive =
+          !!touch && (Math.abs(touch.moveVec.x) > 0.01 || Math.abs(touch.moveVec.y) > 0.01);
+
         const gpMoveActive = gp.moveVec.x * gp.moveVec.x + gp.moveVec.y * gp.moveVec.y > 1e-6;
 
-        merged.moveVec = gpMoveActive ? gp.moveVec : kb.moveVec;
+        if (touchMoveActive && touch) {
+          merged.moveVec = touch.moveVec;
+        } else {
+          merged.moveVec = gpMoveActive ? gp.moveVec : kb.moveVec;
+        }
 
-        merged.sprint = kb.sprint || gp.sprint;
+        // Buttons: OR across all sources
+        merged.sprint = (kb.sprint || gp.sprint) || (touch?.sprint || false);
 
-        merged.actionDown = kb.actionDown || gp.actionDown;
-        merged.actionPressed = kb.actionPressed || gp.actionPressed;
-        merged.actionReleased = kb.actionReleased || gp.actionReleased;
+        merged.actionDown = (kb.actionDown || gp.actionDown) || (touch?.actionDown || false);
+        merged.actionPressed = (kb.actionPressed || gp.actionPressed) || (touch?.actionPressed || false);
+        merged.actionReleased = (kb.actionReleased || gp.actionReleased) || (touch?.actionReleased || false);
 
-        merged.shootDown = kb.shootDown || gp.shootDown;
-        merged.shootReleased = kb.shootReleased || gp.shootReleased;
+        merged.shootDown = (kb.shootDown || gp.shootDown) || (touch?.shootDown || false);
+        merged.shootReleased = (kb.shootReleased || gp.shootReleased) || (touch?.shootReleased || false);
 
-        // Pause is keyboard-only for now (Esc).
-        merged.pausePressed = kb.pausePressed;
+        merged.pausePressed = (kb.pausePressed || gp.pausePressed) || (touch?.pausePressed || false);
       }
 
       // Host pause stops sim progression entirely (match intro / between matches).
@@ -234,6 +251,7 @@ export function CanvasStage(props: {
           // (engine clears the merged snapshot internally).
           keyboardRef.current?.clearEdges();
           gamepadRef.current?.clearEdges();
+          touchRef.current?.clearEdges();
 
           accMsRef.current -= simDt;
         }
@@ -241,6 +259,7 @@ export function CanvasStage(props: {
         // While paused by host, clear edge inputs so they don't "buffer" into kickoff.
         keyboardRef.current?.clearEdges();
         gamepadRef.current?.clearEdges();
+        touchRef.current?.clearEdges();
       }
 
       // Render
@@ -282,6 +301,11 @@ export function CanvasStage(props: {
       keyboardRef.current?.dispose();
       keyboardRef.current = null;
 
+      gamepadRef.current = null;
+
+      touchRef.current?.dispose();
+      touchRef.current = null;
+
       engineRef.current = null;
     };
   }, [makeEngine]);
@@ -298,6 +322,7 @@ export function CanvasStage(props: {
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
       <canvas ref={canvasRef} />
+      {isTouchDevice() && touchRef.current ? <MobileControls touchInput={touchRef.current} /> : null}
 
       {vm ? <Hud vm={vm} hudMeta={hudMetaRef.current} layout={{ topPx: UI_TOP_PX, bottomPx: UI_BOTTOM_PX }} /> : null}
     </div>

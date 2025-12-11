@@ -186,190 +186,28 @@ function drawStandsAroundPitch(args: {
     }
     ctx.restore();
 
-    // 3D-looking stadium "levels": split each stand region into tiers, with per-tier shading and
-    // slightly different parallax (near tier drifts more than far tier).
-    const isTop = orient === "H" ? y < pitchRect.y : false;
-    const isLeft = orient === "V" ? x < pitchRect.x : false;
+    // Crowd layer for this stand region.
+    // Tier dividers are drawn globally as concentric rectangles around the pitch
+    // (so they read as clean continuous rings, not intersecting per-side strips).
+    ctx.save();
+    ctx.translate(driftX, driftY);
 
-    // NOTE: Keep tier geometry visually stable. Any motion should come from the crowd itself,
-    // not tier-relative translations (which read like the “levels” are sliding).
+    drawCrowd(ctx, {
+      x: x - 90,
+      y: y - 90,
+      w: w + 180,
+      h: h + 180,
+      nowMs,
+      density: 0.92,
+      waveAmp: 2.1,
+      bounceAmp: 1.9,
+      colors: ["#C8D0DB", "#8793A1"],
+      sparkleRate: 0.7,
+      seed,
+      pulse: crowdPulse,
+    });
 
-    const tierCount = 3;
-    const tierGap = clamp(Math.min(w, h) * 0.06, 6, 14);
-    const axisLen = orient === "H" ? h : w;
-    const usable = Math.max(0, axisLen - tierGap * (tierCount - 1));
-
-    // Inner -> outer (closest to pitch first)
-    const fracs = [0.4, 0.34, 0.26];
-    const tierSizes = fracs.map((f) => usable * f);
-
-    type TierRect = { x: number; y: number; w: number; h: number };
-    const tiers: TierRect[] = [];
-
-    {
-      let acc = 0;
-      for (let i = 0; i < tierCount; i++) {
-        const size = tierSizes[i];
-        if (orient === "H") {
-          const yy = isTop ? y + h - acc - size : y + acc;
-          tiers.push({ x, y: yy, w, h: size });
-        } else {
-          const xx = isLeft ? x + w - acc - size : x + acc;
-          tiers.push({ x: xx, y, w: size, h });
-        }
-        acc += size + tierGap;
-      }
-    }
-
-    // Tier surface shading (gives depth cues even in overhead)
-    for (let i = 0; i < tiers.length; i++) {
-      const trr = tiers[i];
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(trr.x, trr.y, trr.w, trr.h);
-      ctx.clip();
-
-      // Farther tiers slightly darker / cooler.
-      ctx.globalAlpha = 0.14 + i * 0.06;
-      ctx.fillStyle = i === 0 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.18)";
-      ctx.fillRect(trr.x, trr.y, trr.w, trr.h);
-
-      // Divider visuals are handled as explicit "balcony" rails in the tier gaps below.
-
-      ctx.restore();
-    }
-
-    // Crowd per tier. Keep the translation the same per tier so tier breaks look stable/clean.
-    // Depth is communicated via tier shading + slightly different crowd palette per tier.
-    const tierColors: [string, string][] = [
-      ["#BFC9D6", "#7F8E9E"], // near (brighter)
-      ["#A7B2C2", "#6C7A8A"], // mid
-      ["#8B97A6", "#586575"], // far (darker)
-    ];
-
-    for (let i = 0; i < tiers.length; i++) {
-      const trr = tiers[i];
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(trr.x, trr.y, trr.w, trr.h);
-      ctx.clip();
-
-      // Same drift for all tiers: prevents the “levels are sliding” look.
-      ctx.translate(driftX, driftY);
-
-      drawCrowd(ctx, {
-        x: trr.x - 90,
-        y: trr.y - 90,
-        w: trr.w + 180,
-        h: trr.h + 180,
-        nowMs,
-        density: 0.92,
-        waveAmp: 2.0 - i * 0.25,
-        bounceAmp: 1.9 - i * 0.25,
-        colors: tierColors[i] ?? ["#C8D0DB", "#8793A1"],
-        sparkleRate: 0.65,
-        seed: seed + i * 97,
-        pulse: crowdPulse,
-      });
-
-      ctx.restore();
-    }
-
-    // Balcony rails between tiers (medium-light grey) with cutout openings.
-    // These live in the tierGap bands, which reads as "3D levels" from overhead.
-    for (let i = 0; i < tiers.length - 1; i++) {
-      const a = tiers[i];
-      const b = tiers[i + 1];
-
-      // gap strip location depends on whether tiers stack "toward" or "away" from pitch
-      const gx =
-        orient === "V"
-          ? (isLeft ? b.x + b.w : a.x + a.w)
-          : a.x;
-      const gy =
-        orient === "H"
-          ? (isTop ? b.y + b.h : a.y + a.h)
-          : a.y;
-
-      const gw = orient === "V" ? tierGap : a.w;
-      const gh = orient === "H" ? tierGap : a.h;
-
-      if (gw <= 2 || gh <= 2) continue;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(gx, gy, gw, gh);
-      ctx.clip();
-
-      // Solid balcony band (the "divider")
-      ctx.globalAlpha = 0.95;
-      ctx.fillStyle = "#9FA9B7"; // medium-light grey
-      ctx.fillRect(gx, gy, gw, gh);
-
-      // Top highlight + bottom shadow to make it read like a ledge
-      ctx.globalAlpha = 0.9;
-      ctx.strokeStyle = "rgba(255,255,255,0.35)";
-      ctx.lineWidth = 2;
-      if (orient === "H") {
-        const yTop = Math.round(gy) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(gx + 4, yTop);
-        ctx.lineTo(gx + gw - 4, yTop);
-        ctx.stroke();
-
-        ctx.globalAlpha = 0.65;
-        ctx.strokeStyle = "rgba(0,0,0,0.35)";
-        const yBot = Math.round(gy + gh) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(gx + 4, yBot);
-        ctx.lineTo(gx + gw - 4, yBot);
-        ctx.stroke();
-      } else {
-        const xTop = Math.round(gx) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(xTop, gy + 4);
-        ctx.lineTo(xTop, gy + gh - 4);
-        ctx.stroke();
-
-        ctx.globalAlpha = 0.65;
-        ctx.strokeStyle = "rgba(0,0,0,0.35)";
-        const xBot = Math.round(gx + gw) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(xBot, gy + 4);
-        ctx.lineTo(xBot, gy + gh - 4);
-        ctx.stroke();
-      }
-
-      // Cutout openings (balcony shapes)
-      ctx.globalAlpha = 0.9;
-      ctx.fillStyle = "rgba(0,0,0,0.30)";
-
-      if (orient === "H") {
-        const step = clamp(gw * 0.09, 46, 84);
-        const holeW = step * 0.62;
-        const holeH = gh * 0.62;
-        const yy = gy + (gh - holeH) * 0.55;
-
-        for (let k = 0; k < Math.floor(gw / step); k++) {
-          const xx = gx + step * (k + 0.5) - holeW * 0.5;
-          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
-        }
-      } else {
-        const step = clamp(gh * 0.09, 46, 84);
-        const holeH = step * 0.62;
-        const holeW = gw * 0.62;
-        const xx = gx + (gw - holeW) * 0.55;
-
-        for (let k = 0; k < Math.floor(gh / step); k++) {
-          const yy = gy + step * (k + 0.5) - holeH * 0.5;
-          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
-        }
-      }
-
-      ctx.restore();
-    }
+    ctx.restore();
 
     // Scattered host-color decor (streamers + flags). Keep it sparse and high-contrast.
     // Draw AFTER crowd so it doesn't read like faded texture.
@@ -475,56 +313,144 @@ function drawStandsAroundPitch(args: {
     ctx.restore();
   };
 
-  // Corner “caps” so the horizontal/vertical shells don’t intersect.
-  // These are structural blocks (no balcony rails), to avoid messy overlap artifacts.
-  const drawCornerCap = (x: number, y: number, w: number, h: number, seed: number) => {
-    if (w <= 2 || h <= 2) return;
+  // Concentric rectangular balcony dividers (“rings”) around the pitch.
+  // This makes the level dividers continuous rectangles (no per-side intersection issues).
+  const inflate = (r: PitchRect, padX: number, padY: number): PitchRect => ({
+    x: r.x - padX,
+    y: r.y - padY,
+    w: r.w + padX * 2,
+    h: r.h + padY * 2,
+  });
+
+  const drawBalconyRing = (padOut: number, thick: number, seed: number) => {
+    // Make the outer rectangles longer horizontally (more breathing room left/right).
+    const xStretch = 1.5;
+
+    const padIn = Math.max(0, padOut - thick);
+
+    const outer = inflate(pitchRect, padOut * xStretch, padOut);
+    const inner = inflate(pitchRect, padIn * xStretch, padIn);
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, y, w, h);
+    ctx.rect(0, 0, vp.w, vp.h);
     ctx.clip();
 
-    const base = ctx.createLinearGradient(x, y, x + w, y + h);
-    base.addColorStop(0, "rgba(0,0,0,0.62)");
-    base.addColorStop(1, "rgba(0,0,0,0.22)");
-    ctx.fillStyle = base;
-    ctx.fillRect(x, y, w, h);
+    // Band fill (evenodd: outer - inner)
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = "#9FA9B7"; // medium-light grey
+    ctx.beginPath();
+    ctx.rect(outer.x, outer.y, outer.w, outer.h);
+    ctx.rect(inner.x, inner.y, inner.w, inner.h);
+    ctx.fill("evenodd");
 
-    // A few “support lights” so it reads intentional, not empty.
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    const n = 6;
-    for (let i = 0; i < n; i++) {
-      const rx = hash01(seed * 11.7 + i * 9.3);
-      const ry = hash01(seed * 21.1 + i * 7.9);
-      const ww = clamp(w * 0.18, 10, 22);
-      const hh = clamp(h * 0.08, 6, 14);
-      ctx.fillRect(x + rx * (w - ww), y + ry * (h - hh), ww, hh);
+    // Subtle highlight/shadow borders for a balcony lip feel
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = "rgba(255,255,255,0.30)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(Math.round(outer.x) + 0.5, Math.round(outer.y) + 0.5, Math.round(outer.w) - 1, Math.round(outer.h) - 1);
+
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = "rgba(0,0,0,0.28)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(Math.round(inner.x) + 0.5, Math.round(inner.y) + 0.5, Math.round(inner.w) - 1, Math.round(inner.h) - 1);
+
+    // Balcony cutouts along each side (skip corners so it reads clean)
+    const holeFill = "rgba(0,0,0,0.30)";
+    ctx.fillStyle = holeFill;
+
+    const sideMargin = thick * 1.6;
+    const step = clamp((outer.w + outer.h) * 0.02, 52, 86);
+
+    // top band
+    {
+      const bandY = outer.y;
+      const bandH = inner.y - outer.y;
+      if (bandH > 2) {
+        const holeH = bandH * 0.62;
+        const holeW = step * 0.62;
+        const yy = bandY + (bandH - holeH) * 0.55;
+        const startX = outer.x + sideMargin;
+        const endX = outer.x + outer.w - sideMargin;
+        for (let k = 0; k < Math.floor((endX - startX) / step); k++) {
+          const jitter = (hash01(seed * 17.3 + k * 3.1) - 0.5) * 6;
+          const xx = startX + (k + 0.5) * step + jitter - holeW * 0.5;
+          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
+        }
+      }
+    }
+
+    // bottom band
+    {
+      const bandY = inner.y + inner.h;
+      const bandH = outer.y + outer.h - (inner.y + inner.h);
+      if (bandH > 2) {
+        const holeH = bandH * 0.62;
+        const holeW = step * 0.62;
+        const yy = bandY + (bandH - holeH) * 0.45;
+        const startX = outer.x + sideMargin;
+        const endX = outer.x + outer.w - sideMargin;
+        for (let k = 0; k < Math.floor((endX - startX) / step); k++) {
+          const jitter = (hash01(seed * 29.1 + k * 2.7) - 0.5) * 6;
+          const xx = startX + (k + 0.5) * step + jitter - holeW * 0.5;
+          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
+        }
+      }
+    }
+
+    // left band
+    {
+      const bandX = outer.x;
+      const bandW = inner.x - outer.x;
+      if (bandW > 2) {
+        const holeW = bandW * 0.62;
+        const holeH = step * 0.62;
+        const xx = bandX + (bandW - holeW) * 0.55;
+        const startY = outer.y + sideMargin;
+        const endY = outer.y + outer.h - sideMargin;
+        for (let k = 0; k < Math.floor((endY - startY) / step); k++) {
+          const jitter = (hash01(seed * 41.7 + k * 2.3) - 0.5) * 6;
+          const yy = startY + (k + 0.5) * step + jitter - holeH * 0.5;
+          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
+        }
+      }
+    }
+
+    // right band
+    {
+      const bandX = inner.x + inner.w;
+      const bandW = outer.x + outer.w - (inner.x + inner.w);
+      if (bandW > 2) {
+        const holeW = bandW * 0.62;
+        const holeH = step * 0.62;
+        const xx = bandX + (bandW - holeW) * 0.45;
+        const startY = outer.y + sideMargin;
+        const endY = outer.y + outer.h - sideMargin;
+        for (let k = 0; k < Math.floor((endY - startY) / step); k++) {
+          const jitter = (hash01(seed * 53.9 + k * 2.9) - 0.5) * 6;
+          const yy = startY + (k + 0.5) * step + jitter - holeH * 0.5;
+          ctx.fillRect(Math.round(xx), Math.round(yy), Math.round(holeW), Math.round(holeH));
+        }
+      }
     }
 
     ctx.restore();
   };
 
-  // “Shell” layout:
-  // - Top/bottom stands are inset horizontally so they don't overlap left/right stands
-  // - Left/right stands are inset vertically so they don't overlap top/bottom stands
-  const midW = Math.max(0, vp.w - leftW - rightW);
-  const midH = Math.max(0, vp.h - topH - bottomH);
+  // Restore full-viewport stand coverage (keeps crowd filling the whole window).
+  // Top / bottom stands (full width)
+  drawStandRegion(0, 0, vp.w, topH, 2101, "H");
+  drawStandRegion(0, vp.h - bottomH, vp.w, bottomH, 2207, "H");
 
-  // Top / bottom shells (no corner intersection)
-  drawStandRegion(leftW, 0, midW, topH, 2101, "H");
-  drawStandRegion(leftW, vp.h - bottomH, midW, bottomH, 2207, "H");
+  // Side stands (full height)
+  drawStandRegion(0, 0, leftW, vp.h, 2303, "V");
+  drawStandRegion(vp.w - rightW, 0, rightW, vp.h, 2401, "V");
 
-  // Left / right shells (no corner intersection)
-  drawStandRegion(0, topH, leftW, midH, 2303, "V");
-  drawStandRegion(vp.w - rightW, topH, rightW, midH, 2401, "V");
-
-  // Corner caps (structural supports)
-  drawCornerCap(0, 0, leftW, topH, 2501);
-  drawCornerCap(vp.w - rightW, 0, rightW, topH, 2507);
-  drawCornerCap(0, vp.h - bottomH, leftW, bottomH, 2513);
-  drawCornerCap(vp.w - rightW, vp.h - bottomH, rightW, bottomH, 2519);
+  // Draw 2 divider rings (3 “levels” implied by the rings)
+  const minDist = Math.max(14, Math.min(leftW, rightW, topH, bottomH));
+  const thick = clamp(minDist * 0.14, 10, 18);
+  drawBalconyRing(minDist * 0.34, thick, 901);
+  drawBalconyRing(minDist * 0.68, thick, 907);
 
 }
 
