@@ -1,6 +1,7 @@
 "use client";
 
 import type { EngineViewModel } from "@/lib/game/engine/engineTypes";
+import { isTouchDevice } from "@/lib/utils/device";
 
 function formatClock(msRemaining: number) {
   const s = Math.max(0, Math.floor(msRemaining / 1000));
@@ -28,6 +29,77 @@ export function Hud(props: { vm: EngineViewModel; hudMeta?: { stageLabel: string
 
   const topPx = layout?.topPx ?? 0;
   const bottomPx = layout?.bottomPx ?? 0;
+
+  const isMobile = isTouchDevice();
+
+  if (isMobile) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Mobile: minimal score pill */}
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(8px + var(--rtc-safe-top))",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10,
+            padding: "4px 10px",
+            borderRadius: 9999,
+            background: "rgba(0,0,0,0.40)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            color: "rgba(255,255,255,0.95)",
+            fontSize: 13,
+            fontWeight: 950,
+            letterSpacing: 0.6,
+            fontVariantNumeric: "tabular-nums",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {vm.score.home}–{vm.score.away}
+        </div>
+
+        {/* Center overlay (paused) */}
+        {vm.paused ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "rgba(255,255,255,0.92)",
+              fontWeight: 900,
+              letterSpacing: 2,
+              textTransform: "uppercase",
+              textShadow: "0 10px 30px rgba(0,0,0,0.55)",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: 12,
+                background: "rgba(0,0,0,0.35)",
+                backdropFilter: "blur(6px)",
+                boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
+              }}
+            >
+              Paused
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div

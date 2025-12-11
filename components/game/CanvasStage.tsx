@@ -15,11 +15,11 @@ import { MobileControls } from "./ui/touch/MobileControls";
 
 type Size = { w: number; h: number; dpr: number };
 
-// Reserve UI bars so HUD doesn't overlap the pitch.
-const UI_TOP_PX = 140;
-const UI_BOTTOM_PX = 92;
+// Reserve UI bars so HUD doesn't overlap the pitch (desktop only).
+const UI_TOP_PX_DESKTOP = 140;
+const UI_BOTTOM_PX_DESKTOP = 92;
 
-function getCanvasSize(): Size {
+function getCanvasSize(uiTopPx: number, uiBottomPx: number): Size {
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio ?? 1 : 1;
 
   // Prefer visualViewport when available (mobile browser UI / address bar changes).
@@ -29,8 +29,9 @@ function getCanvasSize(): Size {
   const w = vv?.width ?? window.innerWidth;
   const fullH = vv?.height ?? window.innerHeight;
 
-  // Canvas only renders the playable field region (middle slice).
-  const h = Math.max(1, fullH - UI_TOP_PX - UI_BOTTOM_PX);
+  // Canvas renders the playable field region. On mobile we want fullscreen gameplay,
+  // so the reserved UI bars collapse to 0.
+  const h = Math.max(1, fullH - uiTopPx - uiBottomPx);
 
   return { w, h, dpr };
 }
@@ -43,6 +44,12 @@ export function CanvasStage(props: {
   onFullTime?: (score: Score) => void;
 }) {
   const { matchId, matchSetup, hostPaused, hudMeta, onFullTime } = props;
+
+  // Mobile: maximize gameplay area (no reserved HUD bars).
+  // Desktop: keep existing reserved HUD bars so HUD doesn't overlap pitch.
+  const uiBars = isTouchDevice()
+    ? { topPx: 0, bottomPx: 0 }
+    : { topPx: UI_TOP_PX_DESKTOP, bottomPx: UI_BOTTOM_PX_DESKTOP };
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -142,14 +149,14 @@ export function CanvasStage(props: {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let size = getCanvasSize();
+    let size = getCanvasSize(uiBars.topPx, uiBars.bottomPx);
     const applySize = () => {
-      size = getCanvasSize();
+      size = getCanvasSize(uiBars.topPx, uiBars.bottomPx);
 
       // CSS size
       canvas.style.position = "absolute";
       canvas.style.left = "0";
-      canvas.style.top = `${UI_TOP_PX}px`;
+      canvas.style.top = `${uiBars.topPx}px`;
       canvas.style.width = `${size.w}px`;
       canvas.style.height = `${size.h}px`;
 
@@ -324,7 +331,7 @@ export function CanvasStage(props: {
       <canvas ref={canvasRef} />
       {isTouchDevice() && touchRef.current ? <MobileControls touchInput={touchRef.current} /> : null}
 
-      {vm ? <Hud vm={vm} hudMeta={hudMetaRef.current} layout={{ topPx: UI_TOP_PX, bottomPx: UI_BOTTOM_PX }} /> : null}
+      {vm ? <Hud vm={vm} hudMeta={hudMetaRef.current} layout={{ topPx: uiBars.topPx, bottomPx: uiBars.bottomPx }} /> : null}
     </div>
   );
 }
