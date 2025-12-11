@@ -405,7 +405,7 @@ export function buildR16FromGroups(args: {
   const { groups, seed } = args;
 
   // Ensure tables are up to date.
-  const tables: Record<GroupId, StandingsRow[]> = {} as any;
+  const tables: Record<GroupId, StandingsRow[]> = {} as Record<GroupId, StandingsRow[]>;
   for (const id of GROUP_IDS) {
     const g = groups[id];
     tables[id] = computeGroupTable({ groupId: id, teamIds: g.teamIds, fixtures: g.fixtures, seed });

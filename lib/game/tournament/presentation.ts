@@ -94,7 +94,7 @@ export function knockoutRoundShortLabel(round: KnockoutRound): string {
 
 export function getKiloGroupId(state: TournamentState, kiloTeamId: string = "kilo"): GroupId | null {
   for (const [gid, g] of Object.entries(state.groups) as Array<[GroupId, TournamentState["groups"][GroupId]]>) {
-    if (g.teamIds.includes(kiloTeamId as any)) return gid;
+    if (g.teamIds.includes(kiloTeamId as (typeof g.teamIds)[number])) return gid;
   }
   return null;
 }
